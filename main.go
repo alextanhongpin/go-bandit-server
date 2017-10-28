@@ -44,6 +44,9 @@ func main() {
 		Password: "",
 		DB:       0,
 	})
+
+	// TODO: allow selection of different bandit algorithm
+	// e.g. if "greedy" then (...) else if "ucb1" then (...)
 	epsBandit := bandit.NewEpsilonGreedy(nArms, epsilon)
 	server := &Server{
 		Bandit: epsBandit,
