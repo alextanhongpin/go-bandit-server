@@ -43,7 +43,7 @@ func selectArm(s *Server) http.HandlerFunc {
 				return
 			}
 
-			cmd := s.Cache.HMSet(fmt.Sprintf("arm:%s", bandit.ArmID), hash)
+			cmd := s.Cache.HMSet(fmt.Sprintf("%s:%s", redisKey, bandit.ArmID), hash)
 			if cmd.Err() != nil {
 				http.Error(w, cmd.Err().Error(), http.StatusBadRequest)
 				return
@@ -70,7 +70,7 @@ func updateArm(s *Server) http.HandlerFunc {
 				return
 			}
 			// Validate that they are the same first
-			keyStr := fmt.Sprintf("arm:%s", bandit.ArmID)
+			keyStr := fmt.Sprintf("%s:%s", redisKey, bandit.ArmID)
 			cmd := s.Cache.HGetAll(keyStr)
 			if cmd.Err() != nil {
 				http.Error(w, cmd.Err().Error(), http.StatusBadRequest)
@@ -78,13 +78,11 @@ func updateArm(s *Server) http.HandlerFunc {
 			}
 			hash := cmd.Val()
 			if len(hash) == 0 {
-				// value is incorrect
 				http.Error(w, "The field arm_id is missing", http.StatusBadRequest)
 				return
 			}
 
 			if hash["arm"] != fmt.Sprint(bandit.Arm) {
-				// Arm does not match
 				http.Error(w, "The field arm does not match", http.StatusBadRequest)
 				return
 			}
@@ -94,6 +92,7 @@ func updateArm(s *Server) http.HandlerFunc {
 			for key := range hash {
 				keys = append(keys, key)
 			}
+
 			// Delete hash
 			delCmd := s.Cache.HDel(keyStr, keys...)
 			if delCmd.Err() != nil {
@@ -113,6 +112,7 @@ func updateArm(s *Server) http.HandlerFunc {
 				http.Error(w, "The reward provided is out of range", http.StatusBadRequest)
 				return
 			}
+
 			s.Lock()
 			s.Bandit.Update(int(bandit.Arm), bandit.Reward)
 			s.Unlock()
@@ -137,6 +137,7 @@ func getStats(s *Server) http.HandlerFunc {
 		s.Lock()
 		bandit := s.Bandit
 		s.Unlock()
+
 		if err := json.NewEncoder(w).Encode(bandit); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
