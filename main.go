@@ -27,6 +27,8 @@ const (
 	epsilon  = 0.1
 	scoreMin = 0.0
 	scoreMax = 1.0
+	schedule = "*/5 * * * *"
+	redisKey = "arm"
 )
 
 var features = [...]string{"feat-1", "feat-2", "feat-3"}
@@ -48,28 +50,18 @@ func main() {
 		Cache:  cache,
 	}
 
-	// Load from db?
-	// eps.SetRewards(exp.Rewards)
-	// eps.SetCounts(exp.Counts)
-	// eps.Update(int(msg.Arm), float64(msg.Reward))
-	// s.Bandit.SelectArm()
-
 	mux := http.NewServeMux()
 	mux.Handle("/select-arm", selectArm(server))
 	mux.Handle("/update-arm", updateArm(server))
 	mux.Handle("/stats", getStats(server))
-	// Endpoint to get the stats of the current experiment
-	// mux.Handle("/stats", nil)
 
-	// Run cron periodically to update those assumptions to false
-
+	// Run cron periodically to update those rewards to 0
 	j := Job{
-		Key:   "arm",
+		Key:   redisKey,
 		Cache: cache,
 	}
 	c := cron.New()
-
-	c.AddFunc("*/5 * * * *", func() {
+	c.AddFunc(schedule, func() {
 		j.Lock()
 		keys, err := j.RecordsSince(10) // Seconds
 		j.Unlock()
@@ -81,7 +73,7 @@ func main() {
 		for i := 0; i < len(keys); i++ {
 			func(index int) {
 				key := keys[index]
-				armKey := fmt.Sprintf("arm:%s", key)
+				armKey := fmt.Sprintf("%s:%s", redisKey, key)
 				armKeys, arm, err := j.GetPipeline(armKey)
 				if err != nil {
 					log.Println("getPipelineError:", err.Error())

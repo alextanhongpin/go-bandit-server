@@ -33,9 +33,9 @@ func selectArm(s *Server) http.HandlerFunc {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
-			zcmd := s.Cache.ZAdd("arm", redis.Z{
-				float64(bandit.CreatedAt.UnixNano() / 1e6),
-				bandit.ArmID,
+			zcmd := s.Cache.ZAdd(redisKey, redis.Z{
+				Score:  float64(bandit.CreatedAt.UnixNano() / 1e6),
+				Member: bandit.ArmID,
 			})
 
 			if zcmd.Err() != nil {

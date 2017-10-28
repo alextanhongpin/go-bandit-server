@@ -6,9 +6,10 @@ import (
 	"sync"
 	"time"
 
-	bandit "github.com/alextanhongpin/go-bandit"
 	"github.com/go-redis/redis"
 	"github.com/rs/xid"
+
+	bandit "github.com/alextanhongpin/go-bandit"
 )
 
 // Bandit represents the model of the bandit algorithm
@@ -65,8 +66,10 @@ type Job struct {
 // RecordsSince returns the keys that are available since this period - the seconds
 func (j *Job) RecordsSince(seconds int) ([]string, error) {
 	var out []string
+
 	start := 0
 	stop := time.Now().Add(-time.Duration(seconds)*time.Second).UTC().UnixNano() / 1e6
+
 	cmd := j.Cache.ZRangeByScore(j.Key, redis.ZRangeBy{
 		Min: fmt.Sprint(start),
 		Max: fmt.Sprint(stop),
@@ -104,7 +107,6 @@ func (j *Job) GetPipeline(armKey string) (keys []string, arm int, err error) {
 
 	// Convert arm str to int
 	arm, err = strconv.Atoi(armStr)
-
 	if err != nil {
 		return
 	}
@@ -120,7 +122,7 @@ func (j *Job) DeletePipeline(armKey, key string, keys ...string) error {
 		}
 	}
 
-	if err := pipe.ZRem("arm", key).Err(); err != nil {
+	if err := pipe.ZRem(redisKey, key).Err(); err != nil {
 		return err
 	}
 	if _, err := pipe.Exec(); err != nil && err != redis.Nil {
