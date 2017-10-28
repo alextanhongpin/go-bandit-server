@@ -1,30 +1,51 @@
 package main
 
 import (
+	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
+	"sync"
+	"time"
 
 	"github.com/alextanhongpin/go-bandit"
+	"github.com/go-redis/redis"
+	"github.com/robfig/cron"
 )
 
 // Server represents the server config
 type Server struct {
+	sync.Mutex
 	Bandit *bandit.EpsilonGreedy
+	Cache  *redis.Client
 }
 
 // Config
 const (
-	port    = ":8080"
-	nArms   = 3
-	epsilon = 0.1
+	port     = ":8080"
+	nArms    = 3
+	epsilon  = 0.1
+	scoreMin = 0.0
+	scoreMax = 1.0
 )
 
+var features = [...]string{"feat-1", "feat-2", "feat-3"}
+
 func main() {
+	rand.Seed(time.Now().UnixNano())
 
-	eps := bandit.NewEpsilonGreedy(nArms, epsilon)
-
+	if len(features) != nArms {
+		log.Fatal("Number of features to be tested is incorrect")
+	}
+	cache := redis.NewClient(&redis.Options{
+		Addr:     "localhost:6379",
+		Password: "",
+		DB:       0,
+	})
+	epsBandit := bandit.NewEpsilonGreedy(nArms, epsilon)
 	server := &Server{
-		Bandit: eps,
+		Bandit: epsBandit,
+		Cache:  cache,
 	}
 
 	// Load from db?
@@ -36,10 +57,49 @@ func main() {
 	mux := http.NewServeMux()
 	mux.Handle("/select-arm", selectArm(server))
 	mux.Handle("/update-arm", updateArm(server))
+	mux.Handle("/stats", getStats(server))
 	// Endpoint to get the stats of the current experiment
 	// mux.Handle("/stats", nil)
 
 	// Run cron periodically to update those assumptions to false
+
+	j := Job{
+		Key:   "arm",
+		Cache: cache,
+	}
+	c := cron.New()
+
+	c.AddFunc("*/5 * * * *", func() {
+		j.Lock()
+		keys, err := j.RecordsSince(10) // Seconds
+		j.Unlock()
+		if err != nil {
+			log.Println("error pulling redis record:", err.Error())
+			return
+		}
+
+		for i := 0; i < len(keys); i++ {
+			func(index int) {
+				key := keys[index]
+				armKey := fmt.Sprintf("arm:%s", key)
+				armKeys, arm, err := j.GetPipeline(armKey)
+				if err != nil {
+					log.Println("getPipelineError:", err.Error())
+					return
+				}
+
+				if err := j.DeletePipeline(armKey, key, armKeys...); err != nil {
+					log.Println("deletePipelineError:", err.Error())
+					return
+				}
+				j.Lock()
+				epsBandit.Update(arm, 0)
+				j.Unlock()
+			}(i)
+		}
+	})
+	c.Start()
+
 	log.Printf("listening to port *%s. press ctrl + c to cancel", port)
 	http.ListenAndServe(port, mux)
 }

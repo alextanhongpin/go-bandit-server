@@ -2,49 +2,142 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
+	"log"
 	"net/http"
 	"time"
+
+	"github.com/go-redis/redis"
 )
 
 func selectArm(s *Server) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		arm := s.Bandit.SelectArm()
+		if r.Method == http.MethodGet {
+			s.Lock()
+			arm := s.Bandit.SelectArm()
+			s.Unlock()
 
-		res := SelectArmResponse{
-			Bandit: Bandit{
-				Arm:       arm,
-				ArmID:     "1",
-				CreatedAt: time.Now().UTC().Format(time.RFC3339),
-				UpdatedAt: time.Now().UTC().Format(time.RFC3339),
-				Type:      "SELECT",
-			},
-		}
+			bandit := NewBandit(int64(arm))
 
-		// Store a copy to redis and also in memory
+			res := SelectArmResponse{
+				Bandit: bandit,
+			}
 
-		if err := json.NewEncoder(w).Encode(res); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
+			hash := make(map[string]interface{})
+			buff, err := json.Marshal(res.Bandit)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			if err := json.Unmarshal(buff, &hash); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			zcmd := s.Cache.ZAdd("arm", redis.Z{
+				float64(bandit.CreatedAt.UnixNano() / 1e6),
+				bandit.ArmID,
+			})
+
+			if zcmd.Err() != nil {
+				http.Error(w, zcmd.Err().Error(), http.StatusBadRequest)
+				return
+			}
+
+			cmd := s.Cache.HMSet(fmt.Sprintf("arm:%s", bandit.ArmID), hash)
+			if cmd.Err() != nil {
+				http.Error(w, cmd.Err().Error(), http.StatusBadRequest)
+				return
+			}
+
+			// Store a copy to redis and also in memory
+
+			if err := json.NewEncoder(w).Encode(res); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+		} else {
+			http.Error(w, "Method not implemented", http.StatusNotImplemented)
 		}
 	}
 }
 
 func updateArm(s *Server) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		bandit := Bandit{}
-		if err := json.NewDecoder(r.Body).Decode(&bandit); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
+		if r.Method == http.MethodPost {
+			var bandit Bandit
+			if err := json.NewDecoder(r.Body).Decode(&bandit); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			// Validate that they are the same first
+			keyStr := fmt.Sprintf("arm:%s", bandit.ArmID)
+			cmd := s.Cache.HGetAll(keyStr)
+			if cmd.Err() != nil {
+				http.Error(w, cmd.Err().Error(), http.StatusBadRequest)
+				return
+			}
+			hash := cmd.Val()
+			if len(hash) == 0 {
+				// value is incorrect
+				http.Error(w, "The field arm_id is missing", http.StatusBadRequest)
+				return
+			}
+
+			if hash["arm"] != fmt.Sprint(bandit.Arm) {
+				// Arm does not match
+				http.Error(w, "The field arm does not match", http.StatusBadRequest)
+				return
+			}
+
+			// Get fields
+			keys := make([]string, len(hash))
+			for key := range hash {
+				keys = append(keys, key)
+			}
+			// Delete hash
+			delCmd := s.Cache.HDel(keyStr, keys...)
+			if delCmd.Err() != nil {
+				http.Error(w, delCmd.Err().Error(), http.StatusBadRequest)
+				return
+			}
+
+			createdAt, err := time.Parse(time.RFC3339, hash["created_at"])
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			elapsed := time.Since(createdAt)
+			log.Println("time elapsed", elapsed)
+
+			if bandit.Reward > scoreMax || bandit.Reward < scoreMin {
+				http.Error(w, "The reward provided is out of range", http.StatusBadRequest)
+				return
+			}
+			s.Lock()
+			s.Bandit.Update(int(bandit.Arm), bandit.Reward)
+			s.Unlock()
+
+			// Update a copy to redis and also in memory
+			res := UpdateArmResponse{
+				Ok: true,
+			}
+
+			if err := json.NewEncoder(w).Encode(res); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+		} else {
+			http.Error(w, "Method not implemented", http.StatusNotImplemented)
 		}
+	}
+}
 
-		s.Bandit.Update(bandit.Arm, bandit.Reward)
-
-		// Update a copy to redis and also in memory
-		res := UpdateArmResponse{
-			Ok: true,
-		}
-
-		if err := json.NewEncoder(w).Encode(res); err != nil {
+func getStats(s *Server) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		s.Lock()
+		bandit := s.Bandit
+		s.Unlock()
+		if err := json.NewEncoder(w).Encode(bandit); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
