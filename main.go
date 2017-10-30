@@ -1,34 +1,34 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"math/rand"
 	"net/http"
-	"sync"
+	"runtime"
 	"time"
 
 	"github.com/alextanhongpin/go-bandit"
+	"github.com/dgraph-io/badger"
 	"github.com/go-redis/redis"
 	"github.com/robfig/cron"
 )
 
-// Server represents the server config
-type Server struct {
-	sync.Mutex
-	Bandit *bandit.EpsilonGreedy
-	Cache  *redis.Client
-}
-
 // Config
 const (
-	port     = ":8080"
 	nArms    = 3
 	epsilon  = 0.1
 	scoreMin = 0.0
 	scoreMax = 1.0
+
 	schedule = "*/5 * * * *"
-	redisKey = "arm"
+	port     = ":8080"
+
+	redisKey  = "arm"
+	redisAddr = "localhost:6379"
+	redisPass = ""
+	redisDB   = 0
+
+	dbDir = "./tmp/badger"
 )
 
 var features = [...]string{"feat-1", "feat-2", "feat-3"}
@@ -40,61 +40,79 @@ func main() {
 		log.Fatal("Number of features to be tested is incorrect")
 	}
 	cache := redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
-		Password: "",
-		DB:       0,
+		Addr:     redisAddr,
+		Password: redisPass,
+		DB:       redisDB,
 	})
-
+	// Badger
+	db := newDB(dbDir)
+	defer db.Close()
 	// TODO: allow selection of different bandit algorithm
 	// e.g. if "greedy" then (...) else if "ucb1" then (...)
 	epsBandit := bandit.NewEpsilonGreedy(nArms, epsilon)
-	server := &Server{
-		Bandit: epsBandit,
-		Cache:  cache,
+
+	banditsvc := NewBanditService(epsBandit, cache, db)
+	endpoint := Endpoint{
+		Service: banditsvc,
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle("/select-arm", selectArm(server))
-	mux.Handle("/update-arm", updateArm(server))
-	mux.Handle("/stats", getStats(server))
+	mux.Handle("/select-arm", endpoint.SelectArm())
+	mux.Handle("/update-arm", endpoint.UpdateArm())
+	mux.Handle("/stats", endpoint.GetStats())
+	mux.Handle("/logs", endpoint.GetLogs())
 
-	// Run cron periodically to update those rewards to 0
-	j := Job{
-		Key:   redisKey,
-		Cache: cache,
-	}
 	c := cron.New()
 	c.AddFunc(schedule, func() {
-		j.Lock()
-		keys, err := j.RecordsSince(10) // Seconds
-		j.Unlock()
+		resp, err := banditsvc.ExpireCache(ExpireCacheRequest{
+			Key:     redisKey,
+			Seconds: 10,
+		})
 		if err != nil {
 			log.Println("error pulling redis record:", err.Error())
 			return
 		}
+		keys := resp.Keys
 
 		for i := 0; i < len(keys); i++ {
-			func(index int) {
-				key := keys[index]
-				armKey := fmt.Sprintf("%s:%s", redisKey, key)
-				armKeys, arm, err := j.GetPipeline(armKey)
-				if err != nil {
-					log.Println("getPipelineError:", err.Error())
-					return
-				}
+			key := keys[i]
+			if err := banditsvc.ClearCache(ClearCacheRequest{
+				Key: redisKey,
+				ID:  key.Member.(string),
+			}); err != nil {
+				log.Println(err)
+				return
+			}
 
-				if err := j.DeletePipeline(armKey, key, armKeys...); err != nil {
-					log.Println("deletePipelineError:", err.Error())
-					return
-				}
-				j.Lock()
-				epsBandit.Update(arm, 0)
-				j.Unlock()
-			}(i)
+			resp, err := banditsvc.Read(ReadRequest{
+				Key: key.Member.(string),
+			})
+			if err != nil {
+				log.Println(err)
+				return
+			}
+			epsBandit.Update(int(resp.Bandit.Arm), 0)
 		}
 	})
 	c.Start()
 
+	go func() {
+		for {
+			log.Println("Backends ", runtime.NumGoroutine())
+			time.Sleep(time.Second)
+		}
+	}()
 	log.Printf("listening to port *%s. press ctrl + c to cancel", port)
-	http.ListenAndServe(port, mux)
+	log.Fatal(http.ListenAndServe(port, mux))
+}
+
+func newDB(dir string) *badger.DB {
+	opts := badger.DefaultOptions
+	opts.Dir = dir
+	opts.ValueDir = dir
+	db, err := badger.Open(opts)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return db
 }
