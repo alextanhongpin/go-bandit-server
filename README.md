@@ -2,6 +2,7 @@
 
 A server running multi-armed-bandit algorithm. A redis server is required to implement caching and delayed learning.
 
+<!--
 ## Redis Commands
 
 ```bash
@@ -17,3 +18,4 @@ $ HGETALL key
 # Get by timestamp
 $ ZRANGE arm 0 -1 WITHSCORES
 ```
+-->
