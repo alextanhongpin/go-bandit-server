@@ -73,25 +73,33 @@ func main() {
 			return
 		}
 		keys := resp.Keys
+		messages := make(chan int)
+		go func() {
+			defer close(messages)
+			for i := 0; i < len(keys); i++ {
+				key := keys[i]
+				if err := banditsvc.ClearCache(ClearCacheRequest{
+					Key: redisKey,
+					ID:  key.Member.(string),
+				}); err != nil {
+					log.Println(err)
+					return
+				}
 
-		for i := 0; i < len(keys); i++ {
-			key := keys[i]
-			if err := banditsvc.ClearCache(ClearCacheRequest{
-				Key: redisKey,
-				ID:  key.Member.(string),
-			}); err != nil {
-				log.Println(err)
-				return
-			}
+				resp, err := banditsvc.Read(ReadRequest{
+					Key: key.Member.(string),
+				})
+				if err != nil {
+					log.Println(err)
+					return
+				}
 
-			resp, err := banditsvc.Read(ReadRequest{
-				Key: key.Member.(string),
-			})
-			if err != nil {
-				log.Println(err)
-				return
+				messages <- int(resp.Bandit.Arm)
 			}
-			epsBandit.Update(int(resp.Bandit.Arm), 0)
+		}()
+
+		for msg := range messages {
+			epsBandit.Update(msg, 0)
 		}
 	})
 	c.Start()
