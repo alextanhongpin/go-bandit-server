@@ -1,0 +1,22 @@
+digraph G {
+
+  subgraph cluster_0 {
+     color=grey91
+     style=filled
+     node [shape=box, style=filled]
+    label = "Bandit Server"
+    API Storage UI
+    API -> Storage -> API -> UI -> API
+  }
+
+  subgraph cluster_1 {
+    label = "Application"
+    Server Client User
+  }
+
+  Server -> API [label="Pull Arm"]
+  API -> Server [label="Get Arm"]
+  Server -> Client [label="Render based on arm"]
+  Client -> Server [label="Return reward"]
+  User -> Client [label="User action will return a reward"]
+}
