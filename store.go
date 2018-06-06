@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"sync"
 	"time"
 )
 
@@ -20,6 +21,7 @@ type Store interface {
 }
 
 type memStore struct {
+	sync.RWMutex
 	Arms []Arm
 }
 
@@ -29,11 +31,16 @@ func NewMemStore() Store {
 }
 
 func (m *memStore) GetArms() []Arm {
+	m.RLock()
+	defer m.RUnlock()
 	return m.Arms
 }
 
 // List will return arms that are not yet completed
 func (m *memStore) List(elapsed time.Duration) ([]Arm, error) {
+	m.RLock()
+	defer m.RUnlock()
+
 	var arms []Arm
 	for _, arm := range m.Arms {
 		if !arm.IsCompleted && time.Since(arm.CreatedAt) >= elapsed {
@@ -45,6 +52,9 @@ func (m *memStore) List(elapsed time.Duration) ([]Arm, error) {
 
 // FindID will find an existing arm by id
 func (m *memStore) FindID(id string) (*Arm, error) {
+	m.RLock()
+	defer m.RUnlock()
+
 	for _, arm := range m.Arms {
 		if arm.ID == id && !arm.IsCompleted {
 			return &arm, nil
@@ -55,6 +65,9 @@ func (m *memStore) FindID(id string) (*Arm, error) {
 
 // Update will update an existing bandit
 func (m *memStore) Update(a Arm) error {
+	m.Lock()
+	defer m.Unlock()
+
 	a.IsCompleted = true
 	a.IsActionTaken = true
 	a.UpdatedAt = NewUTCDate()
@@ -70,6 +83,9 @@ func (m *memStore) Update(a Arm) error {
 
 // Create will create a new bandit
 func (m *memStore) Create(a Arm) error {
+	m.Lock()
+	defer m.Unlock()
+
 	m.Arms = append(m.Arms, a)
 	return nil
 }

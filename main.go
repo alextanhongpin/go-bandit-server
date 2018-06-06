@@ -7,6 +7,8 @@ import (
 	"math/rand"
 	"net/http"
 	"time"
+
+	"github.com/robfig/cron"
 )
 
 func init() {
@@ -16,10 +18,22 @@ func init() {
 func main() {
 	experimentName := "colors"
 	features := [...]string{"red", "green", "blue"}
+	everyMinute := "0 * * * * *"
+	sweepDuration := time.Duration(time.Minute * 1)
+
 	m, err := NewEpsilonModel(len(features))
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	c := cron.New()
+	c.AddFunc(everyMinute, func() {
+		log.Println("running cron")
+		if err := m.Sweep(sweepDuration); err != nil {
+			log.Println(err)
+		}
+	})
+	c.Start()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/arms", func(w http.ResponseWriter, r *http.Request) {
