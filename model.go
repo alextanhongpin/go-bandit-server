@@ -3,48 +3,98 @@ package main
 import (
 	"time"
 
-	"github.com/rs/xid"
+	bandit "github.com/alextanhongpin/go-bandit"
 )
 
-// Bandit represents the model of the bandit algorithm
-type Bandit struct {
-	Arm       int64     `json:"arm"` // Don't omit empty - 0 is a valid arm
-	ArmID     string    `json:"arm_id,omitempty"`
-	CreatedAt time.Time `json:"created_at,omitempty"`
-	UpdatedAt time.Time `json:"updated_at,omitempty"`
-	Type      string    `json:"type,omitempty"`
-	Reward    float64   `json:"reward,omitempty"`
-	Feature   string    `json:"feature"`
+// Model represents the business logic for bandit algorithm
+type Model interface {
+	GetArms() []Arm
+	Sweep(elapsed time.Duration) error
+	Update(arm Arm) error
+	SelectArm(probability float64) *Arm
+	Create(arm Arm) error
+	Info() (counts []int, rewards []float64)
 }
 
-// NewBandit returns a new bandit
-func NewBandit(arm int64) Bandit {
-	guid := xid.New()
-	return Bandit{
-		Arm:       arm,
-		ArmID:     guid.String(),
-		CreatedAt: time.Now().UTC(),
-		UpdatedAt: time.Now().UTC(),
-		Type:      "SELECT",
-		Feature:   features[arm],
+type model struct {
+	bandit bandit.Bandit
+	store  Store
+}
+
+// NewModel returns a new model
+func NewModel(b bandit.Bandit, s Store) Model {
+	return &model{
+		bandit: b,
+		store:  s,
 	}
 }
 
-// SelectArmRequest represents the request of the select arm endpoint
-type SelectArmRequest struct {
+// NewEpsilonModel will return a new model configured with the epsilon greedy algorithm
+func NewEpsilonModel(arms int) (Model, error) {
+	b, err := NewDefaultEpsilonGreedy()
+	if err != nil {
+		return nil, err
+	}
+	if err := b.Init(arms); err != nil {
+		return nil, err
+	}
+	return NewModel(b, NewMemStore()), nil
 }
 
-// SelectArmResponse represents the response of the select arm endpoint
-type SelectArmResponse struct {
-	Bandit
+func (m *model) GetArms() []Arm {
+	return m.store.GetArms()
 }
 
-// UpdateArmRequest represents the request of the update arm endpoint
-type UpdateArmRequest struct {
-	Bandit
+// Sweep will perform cleanup of the arms that are no longer actionable
+func (m *model) Sweep(elapsed time.Duration) error {
+	res, err := m.store.List(elapsed)
+	if err != nil {
+		return err
+	}
+
+	for _, r := range res {
+		if err := m.store.Update(r); err != nil {
+			return err
+		}
+
+		if err := m.bandit.Update(r.Arm, r.Reward); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-// UpdateArmResponse represents the response of the update arm endpoint
-type UpdateArmResponse struct {
-	Ok bool `json:"ok"`
+// Update will update the existing bandit
+func (m *model) Update(arm Arm) error {
+	// Check if arm exists - only update arms that was created by us
+	if _, err := m.store.FindID(arm.ID); err != nil {
+		return err
+	}
+
+	// Update the request
+	if err := m.store.Update(arm); err != nil {
+		return err
+	}
+
+	if err := m.bandit.Update(arm.Arm, arm.Reward); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// SelectArm will return a new arm
+func (m *model) SelectArm(probability float64) *Arm {
+	chosenArm := m.bandit.SelectArm(probability)
+	return NewArm(chosenArm)
+}
+
+// Create will create a new arm
+func (m *model) Create(a Arm) error {
+	return m.store.Create(a)
+}
+
+// Info will return the stats of the counts and rewards
+func (m *model) Info() (counts []int, rewards []float64) {
+	return m.bandit.GetCounts(), m.bandit.GetRewards()
 }
