@@ -57,7 +57,6 @@ Output:
 ```json
 {"ok": true}
 ```
-<<<<<<< HEAD
 
 ### Get Arm Stats
 
