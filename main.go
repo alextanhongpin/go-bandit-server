@@ -6,6 +6,7 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/robfig/cron"
@@ -16,6 +17,7 @@ func init() {
 }
 
 func main() {
+	log.Println("app version:", os.Getenv("VCS_REF"))
 	experimentName := "colors"
 	features := []string{"red", "green", "blue"}
 	everyMinute := "0 * * * * *"

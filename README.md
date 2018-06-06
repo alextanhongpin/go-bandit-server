@@ -77,7 +77,7 @@ Output:
 
 ## TODO
 
-- [ ] dockerize the service
+- [x] dockerize the service
 - [ ] create a dashboard for the service (web ui)
 - [ ] make the service configurable
 - [ ] make the results of the service transparent (like feature X is n% better than feature Y)
