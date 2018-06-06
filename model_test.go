@@ -10,7 +10,7 @@ import (
 func TestCreateAndUpdateArm(t *testing.T) {
 	assert := assert.New(t)
 
-	m, err := NewEpsilonModel(3)
+	m, err := NewEpsilonModel(3, []string{"a", "b", "c"})
 	assert.Nil(err)
 
 	arm := m.SelectArm(0.1)
@@ -41,7 +41,7 @@ func TestCreateAndUpdateArm(t *testing.T) {
 func TestCreateAndSweepArm_SweepComplete(t *testing.T) {
 	assert := assert.New(t)
 
-	m, err := NewEpsilonModel(3)
+	m, err := NewEpsilonModel(3, []string{"a", "b", "c"})
 	assert.Nil(err)
 
 	// Select an arm and set the creation time to 1 minute ago - to test for expiry
@@ -68,7 +68,7 @@ func TestCreateAndSweepArm_SweepComplete(t *testing.T) {
 func TestCreateAndSweepArm_NoSweep(t *testing.T) {
 	assert := assert.New(t)
 
-	m, err := NewEpsilonModel(3)
+	m, err := NewEpsilonModel(3, []string{"a", "b", "c"})
 	assert.Nil(err)
 
 	// Create the arm, and perform a sweep

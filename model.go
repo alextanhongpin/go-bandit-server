@@ -19,20 +19,22 @@ type Model interface {
 
 type model struct {
 	sync.RWMutex
-	bandit bandit.Bandit
-	store  Store
+	bandit   bandit.Bandit
+	store    Store
+	features []string
 }
 
 // NewModel returns a new model
-func NewModel(b bandit.Bandit, s Store) Model {
+func NewModel(b bandit.Bandit, s Store, f []string) Model {
 	return &model{
-		bandit: b,
-		store:  s,
+		bandit:   b,
+		store:    s,
+		features: f,
 	}
 }
 
 // NewEpsilonModel will return a new model configured with the epsilon greedy algorithm
-func NewEpsilonModel(arms int) (Model, error) {
+func NewEpsilonModel(arms int, f []string) (Model, error) {
 	b, err := NewDefaultEpsilonGreedy()
 	if err != nil {
 		return nil, err
@@ -41,7 +43,7 @@ func NewEpsilonModel(arms int) (Model, error) {
 		return nil, err
 	}
 
-	return NewModel(b, NewMemStore()), nil
+	return NewModel(b, NewMemStore(), f), nil
 }
 
 func (m *model) GetArms() []Arm {
@@ -54,7 +56,6 @@ func (m *model) GetArms() []Arm {
 func (m *model) Sweep(elapsed time.Duration) error {
 	m.Lock()
 	defer m.Unlock()
-
 	res, err := m.store.List(elapsed)
 	if err != nil {
 		return err
@@ -100,7 +101,10 @@ func (m *model) SelectArm(probability float64) *Arm {
 	defer m.RUnlock()
 
 	chosenArm := m.bandit.SelectArm(probability)
-	return NewArm(chosenArm)
+
+	arm := NewArm(chosenArm)
+	arm.Feature = m.features[arm.Arm]
+	return arm
 }
 
 // Create will create a new arm
@@ -113,8 +117,8 @@ func (m *model) Create(a Arm) error {
 
 // Info will return the stats of the counts and rewards
 func (m *model) Info() (counts []int, rewards []float64) {
-	m.RLock()
-	defer m.RUnlock()
+	m.Lock()
+	defer m.Unlock()
 
 	return m.bandit.GetCounts(), m.bandit.GetRewards()
 }

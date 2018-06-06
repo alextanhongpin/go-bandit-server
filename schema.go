@@ -10,11 +10,11 @@ import (
 // Arm represents a choice in the multi-arm bandit experiment
 type Arm struct {
 	Arm            int       `json:"arm"` // Don't omit empty - 0 is a valid arm
-	ID             string    `json:"id,omitempty"`
-	CreatedAt      time.Time `json:"created_at,omitempty"`
-	UpdatedAt      time.Time `json:"updated_at,omitempty"`
+	ID             string    `json:"id"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 	Reward         float64   `json:"reward,omitempty"`
-	Feature        string    `json:"-"`
+	Feature        string    `json:"feature"`
 	IsActionTaken  bool      `json:"-"`
 	IsCompleted    bool      `json:"-"`
 	ExperimentName string    `json:"-"`
@@ -46,4 +46,11 @@ func NewDefaultEpsilonGreedy() (*bandit.EpsilonGreedy, error) {
 type ResponseError struct {
 	Error string `json:"message"`
 	Code  int    `json:"code"`
+}
+
+type GetStatsResponse struct {
+	Counts         []int     `json:"counts"`
+	Rewards        []float64 `json:"rewards"`
+	Features       []string  `json:"features"`
+	ExperimentName string    `json:"experimentName"`
 }

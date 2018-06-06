@@ -17,11 +17,11 @@ func init() {
 
 func main() {
 	experimentName := "colors"
-	features := [...]string{"red", "green", "blue"}
+	features := []string{"red", "green", "blue"}
 	everyMinute := "0 * * * * *"
 	sweepDuration := time.Duration(time.Minute * 1)
 
-	m, err := NewEpsilonModel(len(features))
+	m, err := NewEpsilonModel(len(features), features)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -76,12 +76,12 @@ func main() {
 
 	mux.HandleFunc("/arms/stats", func(w http.ResponseWriter, r *http.Request) {
 		counts, rewards := m.Info()
-		res := make(map[string]interface{})
-		res["counts"] = counts
-		res["rewards"] = rewards
-		res["features"] = features
-		res["experiment_name"] = experimentName
-		json.NewEncoder(w).Encode(res)
+		json.NewEncoder(w).Encode(GetStatsResponse{
+			Counts:         counts,
+			Rewards:        rewards,
+			Features:       features,
+			ExperimentName: experimentName,
+		})
 	})
 
 	srv := &http.Server{

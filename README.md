@@ -87,3 +87,5 @@ Output:
 - [ ] or make this into a sidecar proxy
 - [ ] CRUD and API interface and CLI to integrate with the configuration
 - [x] fix the race issue that is found in the api
+- [ ] load data from persistent store (e.g. redis) 
+- [ ] note that features might not be loaded in the correct order, hence it is important not to hardcode the values. use namespace instead
