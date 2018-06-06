@@ -1,22 +1,28 @@
 digraph G {
-
+  rankdir = LR;
+  node [shape = box]
+  
   subgraph cluster_0 {
-     color=grey91
-     style=filled
-     node [shape=box, style=filled]
-    label = "Bandit Server"
-    API Storage UI
-    API -> Storage -> API -> UI -> API
+    label = "Bandit API"
+    api [label = API, style = filled, colorfill = grey95]
+    storage [label = Storage]
+    ui [label = UI]
+
+    api -> storage -> api
+    api -> ui -> api
   }
 
   subgraph cluster_1 {
     label = "Application"
-    Server Client User
+    
+    s [label = Server]
+    c [label = Client]
+
+    s -> c [label = "Render based on Arm"]
+    c -> s [label = "Update Reward"]
   }
 
-  Server -> API [label="Pull Arm"]
-  API -> Server [label="Get Arm"]
-  Server -> Client [label="Render based on arm"]
-  Client -> Server [label="Return reward"]
-  User -> Client [label="User action will return a reward"]
+  s -> api [constraint = false, label = "Get Arm"]
+  api -> s [constraint = false]
+
 }
